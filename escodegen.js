@@ -102,8 +102,9 @@
         Call: 16,
         New: 17,
         TaggedTemplate: 18,
-        Member: 19,
-        Primary: 20
+        OptionalMember: 19,
+        Member: 20,
+        Primary: 21
     };
 
     BinaryPrecedence = {
@@ -1873,6 +1874,11 @@
             var result, i, iz;
             // F_ALLOW_UNPARATH_NEW becomes false.
             result = [this.generateExpression(expr.callee, Precedence.Call, E_TTF)];
+
+            if (expr.optional) {
+                result.push('?.');
+            }
+
             result.push('(');
             for (i = 0, iz = expr['arguments'].length; i < iz; ++i) {
                 result.push(this.generateExpression(expr['arguments'][i], Precedence.Assignment, E_TTT));
@@ -1886,6 +1892,12 @@
                 return ['(', result, ')'];
             }
             return parenthesize(result, Precedence.Call, precedence);
+        },
+
+        ChainExpression: function (expr, precedence, flags) {
+            var expression = expr.expression;
+
+            return this[expression.type](expression, precedence, flags);
         },
 
         NewExpression: function (expr, precedence, flags) {
@@ -1918,10 +1930,19 @@
         MemberExpression: function (expr, precedence, flags) {
             var result, fragment;
 
-            // F_ALLOW_UNPARATH_NEW becomes false.
-            result = [this.generateExpression(expr.object, Precedence.Call, (flags & F_ALLOW_CALL) ? E_TTF : E_TFF)];
+            if (expr.object.type === 'ChainExpression' && expr.object.expression.optional) {
+                // F_ALLOW_UNPARATH_NEW becomes false.
+                result = [this.generateExpression(expr.object, Precedence.Member, (flags & F_ALLOW_CALL) ? E_TTF : E_TFF)];
+            } else {
+                // F_ALLOW_UNPARATH_NEW becomes false.
+                result = [this.generateExpression(expr.object, Precedence.Call, (flags & F_ALLOW_CALL) ? E_TTF : E_TFF)];
+            }
 
             if (expr.computed) {
+                if (expr.optional) {
+                    result.push('?.');
+                }
+
                 result.push('[');
                 result.push(this.generateExpression(expr.property, Precedence.Sequence, flags & F_ALLOW_CALL ? E_TTT : E_TFT));
                 result.push(']');
@@ -1943,8 +1964,12 @@
                         result.push(' ');
                     }
                 }
-                result.push('.');
+                result.push(expr.optional ? '?.' : '.');
                 result.push(generateIdentifier(expr.property));
+            }
+
+            if (precedence === Precedence.Member) {
+                return parenthesize(result, Precedence.OptionalMember, precedence);
             }
 
             return parenthesize(result, Precedence.Member, precedence);
@@ -2457,8 +2482,7 @@
                 this.generateExpression(expr.source, Precedence.Assignment, E_TTT),
                 ')'
             ], Precedence.Call, precedence);
-        },
-
+        }
     };
 
     merge(CodeGenerator.prototype, CodeGenerator.Expression);
